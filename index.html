@@ -12,6 +12,7 @@
     canvas { border:1px solid #ccc; display:block; margin-bottom:8px }
     #log { white-space:pre-wrap; background:#f7f7f7; padding:8px; border-radius:4px; height:120px; overflow:auto }
     button { margin-right:8px }
+    .button { display:inline-block; padding:6px 10px; background:#007bff; color:#fff; border-radius:4px; text-decoration:none }
   </style>
 </head>
 <body>
@@ -38,7 +39,7 @@
       <input id="maxIters" type="number" min="1" value="8">
     </label>
     <button id="start">开始压缩</button>
-    <button id="download" disabled>下载</button>
+    <a id="download" class="button" style="pointer-events:none; opacity:0.6;">下载</a>
   </div>
 
   <canvas id="preview"></canvas>
@@ -130,9 +131,8 @@
       img.src = url;
     });
 
-    // Minimal GIF decoder using browser's Image and canvas to extract frames.
-    // This approach draws the GIF at successive times to capture frames, but it's limited.
-
+    // Minimal GIF decoding + encoding pipeline using gifuct-js (parsing) and gif.js (encoding).
+    // We load those libraries from `js/` (local) or fall back to CDNs if needed.
     async function extractFrames(arrayBuffer){
       // Create blob URL
       const blob = new Blob([arrayBuffer], {type:'image/gif'});
@@ -228,8 +228,8 @@
         if(typeof GIF === 'undefined'){
           return reject(new Error('gif.js 编码器未就绪 (GIF 未定义)。请检查网络和库加载。'));
         }
-        const workerScript = window.__GIF_WORKER_SCRIPT || 'js/gif.worker.js';
-        const gif = new GIF({ workers: 2, quality: 10, workerScript, width, height });
+          const workerScript = window.__GIF_WORKER_SCRIPT || 'js/gif.worker.js';
+          const gif = new GIF({ workers: 2, quality: 10, workerScript, width, height });
         const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height; const ctx = canvas.getContext('2d');
         frames.forEach(f=>{
           const imageData = new ImageData(f.patch, f.dims.width, f.dims.height);
@@ -307,17 +307,19 @@
         log('完成：', Math.round(res.sizeKB)+'KB, scale='+res.scale.toFixed(2));
         if(outputBlobUrl) URL.revokeObjectURL(outputBlobUrl);
         outputBlobUrl = URL.createObjectURL(res.blob);
+        // enable download link
         downloadBtn.href = outputBlobUrl;
         downloadBtn.download = 'compressed.gif';
-        downloadBtn.disabled = false;
+        downloadBtn.style.pointerEvents = 'auto';
+        downloadBtn.style.opacity = '1';
         // preview
         const img = new Image(); img.onload = ()=>{ preview.width = img.width; preview.height = img.height; const ctx = preview.getContext('2d'); ctx.clearRect(0,0,preview.width, preview.height); ctx.drawImage(img,0,0); URL.revokeObjectURL(img.src); }; img.src = outputBlobUrl;
       }catch(e){ console.error(e); log('出错：', e); }
       startBtn.disabled = false;
     });
 
-    // prepare download anchor
-    downloadBtn.addEventListener('click', ()=>{});
+    // prepare download anchor (no-op handler required)
+    downloadBtn.addEventListener('click', (e)=>{ /* anchor will download file via href */ });
 
   </script>
 </body>
