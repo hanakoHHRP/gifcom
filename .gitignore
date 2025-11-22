@@ -9,7 +9,7 @@
 !/js/
 !/js/**
 !/README.md
-!/README-pack-js.md
+
 
 # Ignore common node artifacts and build folders (already covered by /*)
 node_modules/

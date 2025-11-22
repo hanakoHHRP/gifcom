@@ -44,7 +44,29 @@
   <canvas id="preview"></canvas>
   <div id="log"></div>
 
+  <!-- 外部依赖：优先使用 CDN；若网络受限，请下载到本地并改为相对路径（例如 ./gifuct.min.js） -->
+  <!-- gifuct-js 在 npm 包中没有提供 UMD/dist 文件（某些版本），使用 ESM CDN 转换器加载 -->
+  <!-- 本地打包脚本（见 scripts/build-gifuct.bat）将生成 js/gifuct.bundle.js -->
+  <script src="js/gifuct.bundle.js"></script>
+  <script src="js/gif.js"></script>
   <script>
+    // workerScript 会在 GIF 实例化时使用，确保指向本地 worker 文件
+    window.__GIF_WORKER_SCRIPT = 'js/gif.worker.js';
+  </script>
+
+  <script>
+    // 检测外部库是否已加载，并把结果写入页面日志（以便 file:// 或受限网络时也能看到）
+    (function(){
+      function writePageLog(msg){ try{ const el = document.getElementById('log'); if(el){ el.textContent += msg + '\n'; el.scrollTop = el.scrollHeight; } } catch(e){}
+      }
+      const hasGifuct = typeof window.gifuct !== 'undefined';
+      const hasGIF = typeof window.GIF !== 'undefined';
+      writePageLog('外部库检测: gifuct=' + hasGifuct + ', GIF=' + hasGIF);
+      if(!hasGifuct) writePageLog('警告：未找到 gifuct-js，全局对象 gifuct 未定义。请运行 scripts\\build-gifuct.bat 在本地生成 js/gifuct.bundle.js');
+      else writePageLog('已加载本地 gifuct.bundle.js (window.gifuct 可用)');
+      if(!hasGIF) writePageLog('警告：未找到 gif.js，全局对象 GIF 未定义。请替换 js/gif.js 为完整版构建。');
+    })();
+
     // 使用内联脚本实现，无需安装。我们会手动解析 GIF 并重建。
     // 依赖：使用 minimal gif parsing/encoding implemented below.
 
@@ -76,6 +98,18 @@
       logEl.textContent += parts.join(' ') + '\n';
       logEl.scrollTop = logEl.scrollHeight;
     }
+
+    // 运行时辅助：当用户点击开始前，再次验证库
+    (function(){
+      const origLog = log;
+      const checkLibs = ()=>{
+        origLog('运行时检查： gifuct=' + (typeof window.gifuct !== 'undefined') + ', GIF=' + (typeof window.GIF !== 'undefined'));
+        if(typeof window.gifuct === 'undefined') origLog('提示：gifuct-js 未加载。可尝试：\n - 在本地下载并放到同目录，修改脚本引用为 ./gifuct.min.js\n - 使用本地 HTTP 服务器 (例如 `npx http-server` 或 `python -m http.server`) 打开页面 (避免 file://)');
+        if(typeof window.GIF === 'undefined') origLog('提示：gif.js 未加载。请确认 gif.js 与 gif.worker.js 已正确加载。');
+      };
+      // 在页面加载后一秒检查（确保外部脚本有时间加载）
+      window.addEventListener('load', ()=> setTimeout(checkLibs, 1000));
+    })();
 
     qualityRange.addEventListener('input', ()=> qualityVal.textContent = qualityRange.value);
 
@@ -141,17 +175,20 @@
           const attempts = [];
           // gifuct - prefer local copy first
           attempts.push({name:'gifuct-js', urls:[
+            './js/gifuct.bundle.js',
             './gifuct.min.js',
             'https://unpkg.com/gifuct-js/dist/gifuct.min.js',
             'https://cdn.jsdelivr.net/npm/gifuct-js@3.0.0/dist/gifuct.min.js'
           ]});
           // gif.js worker + main
           attempts.push({name:'gif.worker', urls:[
+            './js/gif.worker.js',
             './gif.worker.js',
             'https://unpkg.com/gif.js.optimized/dist/gif.worker.js',
             'https://cdn.jsdelivr.net/npm/gif.js.optimized@0.1.0/dist/gif.worker.js'
           ]});
           attempts.push({name:'gif.js', urls:[
+            './js/gif.js',
             './gif.js',
             'https://unpkg.com/gif.js.optimized/dist/gif.js',
             'https://cdn.jsdelivr.net/npm/gif.js.optimized@0.1.0/dist/gif.js'
@@ -191,7 +228,8 @@
         if(typeof GIF === 'undefined'){
           return reject(new Error('gif.js 编码器未就绪 (GIF 未定义)。请检查网络和库加载。'));
         }
-        const gif = new GIF({ workers: 2, quality: 10, workerScript: 'https://unpkg.com/gif.js.optimized/dist/gif.worker.js' });
+        const workerScript = window.__GIF_WORKER_SCRIPT || 'js/gif.worker.js';
+        const gif = new GIF({ workers: 2, quality: 10, workerScript, width, height });
         const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height; const ctx = canvas.getContext('2d');
         frames.forEach(f=>{
           const imageData = new ImageData(f.patch, f.dims.width, f.dims.height);
