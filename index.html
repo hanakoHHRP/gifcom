@@ -39,10 +39,11 @@
       <input id="maxIters" type="number" min="1" value="8">
     </label>
     <button id="start">开始压缩</button>
-    <a id="download" class="button" style="pointer-events:none; opacity:0.6;">下载</a>
   </div>
 
   <canvas id="preview"></canvas>
+  <img id="previewImg" alt="Original GIF" style="display:none; border:1px solid #ccc; margin-top:8px; max-width:100%" />
+  <img id="result" alt="Compressed GIF" style="display:none; border:1px solid #ccc; margin-top:8px; max-width:100%" />
   <div id="log"></div>
 
   <!-- 外部依赖：优先使用 CDN；若网络受限，请下载到本地并改为相对路径（例如 ./gifuct.min.js） -->
@@ -76,7 +77,7 @@
     const qualityVal = document.getElementById('qualityVal');
     const targetInput = document.getElementById('target');
     const startBtn = document.getElementById('start');
-    const downloadBtn = document.getElementById('download');
+    const resultImg = document.getElementById('result');
     const preview = document.getElementById('preview');
     const logEl = document.getElementById('log');
     const maxIters = document.getElementById('maxIters');
@@ -122,13 +123,12 @@
       // show first frame as preview
       const blob = new Blob([originalArrayBuffer], {type: 'image/gif'});
       const url = URL.createObjectURL(blob);
-      const img = new Image();
-      img.onload = ()=>{
-        preview.width = img.width; preview.height = img.height;
-        const ctx = preview.getContext('2d'); ctx.clearRect(0,0,preview.width, preview.height); ctx.drawImage(img,0,0);
-        URL.revokeObjectURL(url);
-      };
-      img.src = url;
+      // show animated GIF in an <img> so it auto-plays and user can right-click
+      const previewImg = document.getElementById('previewImg');
+      previewImg.style.display = 'block';
+      previewImg.src = url;
+      // hide canvas while previewing the animated GIF
+      preview.style.display = 'none';
     });
 
     // Minimal GIF decoding + encoding pipeline using gifuct-js (parsing) and gif.js (encoding).
@@ -307,19 +307,20 @@
         log('完成：', Math.round(res.sizeKB)+'KB, scale='+res.scale.toFixed(2));
         if(outputBlobUrl) URL.revokeObjectURL(outputBlobUrl);
         outputBlobUrl = URL.createObjectURL(res.blob);
-        // enable download link
-        downloadBtn.href = outputBlobUrl;
-        downloadBtn.download = 'compressed.gif';
-        downloadBtn.style.pointerEvents = 'auto';
-        downloadBtn.style.opacity = '1';
-        // preview
-        const img = new Image(); img.onload = ()=>{ preview.width = img.width; preview.height = img.height; const ctx = preview.getContext('2d'); ctx.clearRect(0,0,preview.width, preview.height); ctx.drawImage(img,0,0); URL.revokeObjectURL(img.src); }; img.src = outputBlobUrl;
+        // hide original preview image if present
+        const previewImg = document.getElementById('previewImg');
+        if(previewImg){ previewImg.style.display = 'none'; }
+        // show compressed GIF as an <img> so user can right-click -> Save image as
+        resultImg.style.display = 'block';
+        resultImg.src = outputBlobUrl;
+        resultImg.onload = ()=>{ try{ /* keep available until user saves; revoke when loaded to free memory */ URL.revokeObjectURL(outputBlobUrl); } catch(e){} };
+        // preview (draw first frame to canvas)
+        const img = new Image(); img.onload = ()=>{ preview.style.display = 'block'; preview.width = img.width; preview.height = img.height; const ctx = preview.getContext('2d'); ctx.clearRect(0,0,preview.width, preview.height); ctx.drawImage(img,0,0); URL.revokeObjectURL(img.src); }; img.src = outputBlobUrl;
       }catch(e){ console.error(e); log('出错：', e); }
       startBtn.disabled = false;
     });
 
-    // prepare download anchor (no-op handler required)
-    downloadBtn.addEventListener('click', (e)=>{ /* anchor will download file via href */ });
+    // no explicit download control — user can right-click the preview image to save
 
   </script>
 </body>
