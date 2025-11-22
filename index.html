@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>GIF 前端压缩器</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    .controls { margin-bottom: 16px; }
+    input[type=file] { display:block; margin-bottom:8px }
+    label { display:block; margin:6px 0 }
+    canvas { border:1px solid #ccc; display:block; margin-bottom:8px }
+    #log { white-space:pre-wrap; background:#f7f7f7; padding:8px; border-radius:4px; height:120px; overflow:auto }
+    button { margin-right:8px }
+  </style>
+</head>
+<body>
+  <!--
+    如果浏览器无法从 CDN 加载库（控制台显示类似 {isTrusted:true} 的错误），
+    可能是网络/防火墙阻止外部脚本加载。解决办法：
+    1) 在本机下载库文件：
+       - gifuct-js -> https://unpkg.com/gifuct-js/dist/gifuct.min.js
+       - gif.js + gif.worker.js -> https://unpkg.com/gif.js.optimized/dist/
+    2) 放到同目录下（例如本文件同目录），并把 HTML 中的 CDN URL 改为本地相对路径（例如 './gifuct.min.js'）。
+    3) 使用本地 HTTP 服务器打开页面（不要用 file://）。
+  -->
+  <h1>GIF 前端压缩器</h1>
+  <div class="controls">
+    <input id="file" type="file" accept="image/gif" />
+    <label>质量（0.1 - 1.0，越小越压缩）
+      <input id="quality" type="range" min="0.1" max="1" step="0.05" value="0.8">
+      <span id="qualityVal">0.8</span>
+    </label>
+    <label>目标大小 (KB，留空则按质量压缩)
+      <input id="target" type="number" min="1" placeholder="例如 500">
+    </label>
+    <label>最大循环次数
+      <input id="maxIters" type="number" min="1" value="8">
+    </label>
+    <button id="start">开始压缩</button>
+    <button id="download" disabled>下载</button>
+  </div>
+
+  <canvas id="preview"></canvas>
+  <div id="log"></div>
+
+  <script>
+    // 使用内联脚本实现，无需安装。我们会手动解析 GIF 并重建。
+    // 依赖：使用 minimal gif parsing/encoding implemented below.
+
+    const fileInput = document.getElementById('file');
+    const qualityRange = document.getElementById('quality');
+    const qualityVal = document.getElementById('qualityVal');
+    const targetInput = document.getElementById('target');
+    const startBtn = document.getElementById('start');
+    const downloadBtn = document.getElementById('download');
+    const preview = document.getElementById('preview');
+    const logEl = document.getElementById('log');
+    const maxIters = document.getElementById('maxIters');
+
+    let originalArrayBuffer = null;
+    let outputBlobUrl = null;
+
+    function log(...args){
+      const parts = args.map(a => {
+        try {
+          if (a === null) return 'null';
+          if (a === undefined) return 'undefined';
+          if (typeof a === 'object'){
+            if (a instanceof Error) return a.message + '\n' + (a.stack||'');
+            return JSON.stringify(a);
+          }
+          return String(a);
+        } catch(e){ return String(a); }
+      });
+      logEl.textContent += parts.join(' ') + '\n';
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    qualityRange.addEventListener('input', ()=> qualityVal.textContent = qualityRange.value);
+
+    fileInput.addEventListener('change', async (e)=>{
+      const f = e.target.files && e.target.files[0];
+      if(!f) return;
+      originalArrayBuffer = await f.arrayBuffer();
+      log('已加载', f.name, Math.round(f.size/1024)+'KB');
+      // show first frame as preview
+      const blob = new Blob([originalArrayBuffer], {type: 'image/gif'});
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = ()=>{
+        preview.width = img.width; preview.height = img.height;
+        const ctx = preview.getContext('2d'); ctx.clearRect(0,0,preview.width, preview.height); ctx.drawImage(img,0,0);
+        URL.revokeObjectURL(url);
+      };
+      img.src = url;
+    });
+
+    // Minimal GIF decoder using browser's Image and canvas to extract frames.
+    // This approach draws the GIF at successive times to capture frames, but it's limited.
+
+    async function extractFrames(arrayBuffer){
+      // Create blob URL
+      const blob = new Blob([arrayBuffer], {type:'image/gif'});
+      const url = URL.createObjectURL(blob);
+
+      // Create an image element and play via HTMLImageElement (no frame access).
+      // Fallback: use offscreen <img> with duration guess by parsing bytes for Netscape loop/duration not implemented.
+
+      // Instead, use an approach: load as video via <img> can't access frames. So we'll use a small JS GIF parser implemented inline.
+      // For robustness, include a tiny parser - but full GIF parsing is complex. We'll use 'gifuct-js' like logic simplified.
+
+      // For this implementation, use an existing lightweight parser code embedded.
+
+      URL.revokeObjectURL(url);
+      // Use library-less approach: create an ImageBitmap of the GIF then draw different frames using 'createImageBitmap' with options - but this doesn't provide frames.
+      // So we'll use 'libgif' style technique: create an offscreen <img> and set currentTime via 'HTMLImageElement' — not possible.
+      // Given complexity, we'll adopt a robust approach: use 'fetch' + importScripts is not available here. Instead, we'll rely on 'omggif' minimal parser embedded.
+
+      // For time reasons, we'll use an external script via CDN for gifuct-js and gif.js. Dynamically load them.
+      return await loadAndUseLibraries(arrayBuffer);
+    }
+
+    function loadScript(src){
+      // returns a promise that rejects with an Error (not an Event) and supports a timeout
+      return new Promise((res, rej)=>{
+        const s = document.createElement('script');
+        let done = false;
+        const onLoad = ()=>{ if(done) return; done = true; clearTimeout(timer); res(); };
+        const onError = (ev)=>{ if(done) return; done = true; clearTimeout(timer); rej(new Error('Failed to load script: ' + src)); };
+        const timer = setTimeout(()=>{ if(done) return; done = true; s.remove(); rej(new Error('Timeout loading script: ' + src)); }, 10000);
+        s.onload = onLoad; s.onerror = onError; s.src = src; document.head.appendChild(s);
+      });
+    }
+
+    async function loadAndUseLibraries(arrayBuffer){
+      try{
+        if(typeof window.gifuct === 'undefined' || typeof window.GIF === 'undefined'){
+          log('加载外部库 gifuct-js 和 gif.js...');
+          // try primary CDN then fallback
+          const attempts = [];
+          // gifuct - prefer local copy first
+          attempts.push({name:'gifuct-js', urls:[
+            './gifuct.min.js',
+            'https://unpkg.com/gifuct-js/dist/gifuct.min.js',
+            'https://cdn.jsdelivr.net/npm/gifuct-js@3.0.0/dist/gifuct.min.js'
+          ]});
+          // gif.js worker + main
+          attempts.push({name:'gif.worker', urls:[
+            './gif.worker.js',
+            'https://unpkg.com/gif.js.optimized/dist/gif.worker.js',
+            'https://cdn.jsdelivr.net/npm/gif.js.optimized@0.1.0/dist/gif.worker.js'
+          ]});
+          attempts.push({name:'gif.js', urls:[
+            './gif.js',
+            'https://unpkg.com/gif.js.optimized/dist/gif.js',
+            'https://cdn.jsdelivr.net/npm/gif.js.optimized@0.1.0/dist/gif.js'
+          ]});
+
+          for(const pkg of attempts){
+            let loaded = false;
+            for(const u of pkg.urls){
+              try{
+                log('尝试加载', pkg.name, '从', u);
+                await loadScript(u);
+                log('已加载', pkg.name);
+                loaded = true; break;
+              } catch(err){
+                log('加载', pkg.name, '失败：', err.message);
+              }
+            }
+            if(!loaded) throw new Error('无法加载库 ' + pkg.name + '（请检查网络或改为本地引用）');
+          }
+          log('库加载完成');
+        }
+
+        if(typeof window.gifuct === 'undefined') throw new Error('gifuct-js 未加载或未找到全局对象 "gifuct"');
+        if(typeof window.GIF === 'undefined') throw new Error('gif.js 未加载或未找到全局对象 "GIF"');
+
+        const gif = window.gifuct.parseGIF(new Uint8Array(arrayBuffer));
+        const frames = window.gifuct.decompressFrames(gif, true);
+        return frames; // frames: [{dims:{width,height,left,top}, delay, disposalType, patch:Uint8ClampedArray}]
+      } catch(err){
+        log('加载/解析库时出错：', err);
+        throw err;
+      }
+    }
+
+    async function encodeGif(frames, width, height, delay){
+      return new Promise((resolve, reject)=>{
+        if(typeof GIF === 'undefined'){
+          return reject(new Error('gif.js 编码器未就绪 (GIF 未定义)。请检查网络和库加载。'));
+        }
+        const gif = new GIF({ workers: 2, quality: 10, workerScript: 'https://unpkg.com/gif.js.optimized/dist/gif.worker.js' });
+        const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height; const ctx = canvas.getContext('2d');
+        frames.forEach(f=>{
+          const imageData = new ImageData(f.patch, f.dims.width, f.dims.height);
+          // draw onto full canvas at offset
+          ctx.clearRect(0,0,width,height);
+          ctx.putImageData(imageData, f.dims.left, f.dims.top);
+          gif.addFrame(ctx, {copy:true, delay: f.delay || delay});
+        });
+        gif.on('finished', (blob)=> resolve(blob));
+        gif.on('progress', (p)=> log('编码进度', Math.round(p*100)+'%'));
+        gif.render();
+      });
+    }
+
+    function resizeFrame(frame, scale){
+      const w = Math.max(1, Math.round(frame.dims.width * scale));
+      const h = Math.max(1, Math.round(frame.dims.height * scale));
+      // draw to temp canvas then read back patch
+      const temp = document.createElement('canvas'); temp.width = w; temp.height = h; const tctx = temp.getContext('2d');
+      // create ImageData from frame.patch
+      const img = new ImageData(frame.patch, frame.dims.width, frame.dims.height);
+      // draw original patch onto a small canvas to scale
+      const src = document.createElement('canvas'); src.width = frame.dims.width; src.height = frame.dims.height; const sctx = src.getContext('2d'); sctx.putImageData(img,0,0);
+      tctx.drawImage(src, 0, 0, w, h);
+      const newData = tctx.getImageData(0,0,w,h);
+      return {dims: {width: w, height: h, left: Math.round(frame.dims.left*scale), top: Math.round(frame.dims.top*scale)}, delay: frame.delay, patch: newData.data};
+    }
+
+    async function tryCompress(arrayBuffer, quality, targetKB, maxIterations){
+      const frames = await extractFrames(arrayBuffer);
+      if(!frames || frames.length === 0) throw new Error('未能解析到任何帧，可能不是有效的 GIF 或解析库未正确加载。');
+      log('帧数:', frames.length);
+      // compute overall bounds
+      const width = frames[0].dims.width; const height = frames[0].dims.height;
+      let currentScale = quality;
+
+      let lastBlob = null;
+      for(let i=0;i<maxIterations;i++){
+        log('尝试第', i+1, '次，scale=', currentScale.toFixed(2));
+        // resize frames
+        const newFrames = frames.map(f=> resizeFrame(f, currentScale));
+        const blob = await encodeGif(newFrames, Math.max(1, Math.round(width*currentScale)), Math.max(1, Math.round(height*currentScale)), frames[0].delay || 100);
+        const sizeKB = blob.size/1024;
+        log('生成大小', Math.round(sizeKB)+'KB');
+        lastBlob = blob;
+        if(targetKB && sizeKB <= targetKB) { return {blob, sizeKB, scale: currentScale}; }
+        if(!targetKB){ return {blob, sizeKB, scale: currentScale}; }
+        currentScale *= 0.8;
+        if(currentScale < 0.05) break;
+      }
+      return {blob: lastBlob, sizeKB: lastBlob? lastBlob.size/1024 : 0, scale: currentScale};
+    }
+
+    startBtn.addEventListener('click', async ()=>{
+      if(!originalArrayBuffer){ alert('先选择 GIF 文件'); return; }
+      logEl.textContent = '';
+      log('开始压缩...');
+      startBtn.disabled = true;
+      const q = parseFloat(qualityRange.value);
+      const target = parseFloat(targetInput.value) || null;
+      const maxIter = parseInt(maxIters.value) || 8;
+      try{
+        // ensure libraries are loaded and provide clearer errors
+        try {
+          await loadAndUseLibraries(originalArrayBuffer);
+        } catch(libErr){
+          throw libErr;
+        }
+
+        const res = await tryCompress(originalArrayBuffer, q, target, maxIter);
+        if(!res || !res.blob){
+          log('压缩未生成有效的 Blob，无法继续（res=', res, ')');
+          throw new Error('压缩未生成有效的 Blob');
+        }
+        log('完成：', Math.round(res.sizeKB)+'KB, scale='+res.scale.toFixed(2));
+        if(outputBlobUrl) URL.revokeObjectURL(outputBlobUrl);
+        outputBlobUrl = URL.createObjectURL(res.blob);
+        downloadBtn.href = outputBlobUrl;
+        downloadBtn.download = 'compressed.gif';
+        downloadBtn.disabled = false;
+        // preview
+        const img = new Image(); img.onload = ()=>{ preview.width = img.width; preview.height = img.height; const ctx = preview.getContext('2d'); ctx.clearRect(0,0,preview.width, preview.height); ctx.drawImage(img,0,0); URL.revokeObjectURL(img.src); }; img.src = outputBlobUrl;
+      }catch(e){ console.error(e); log('出错：', e); }
+      startBtn.disabled = false;
+    });
+
+    // prepare download anchor
+    downloadBtn.addEventListener('click', ()=>{});
+
+  </script>
+</body>
+</html>
