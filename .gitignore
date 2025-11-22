@@ -1,0 +1,23 @@
+# Ignore everything by default
+/*
+
+# Keep .gitignore itself
+!/.gitignore
+
+# Keep site static assets needed for GitHub Pages
+!/index.html
+!/js/
+!/js/**
+!/README.md
+!/README-pack-js.md
+
+# Ignore common node artifacts and build folders (already covered by /*)
+node_modules/
+package/
+
+# Ignore IDE/editor folders
+.vscode/
+.idea/
+
+# Keep any future CNAME if present
+!CNAME
